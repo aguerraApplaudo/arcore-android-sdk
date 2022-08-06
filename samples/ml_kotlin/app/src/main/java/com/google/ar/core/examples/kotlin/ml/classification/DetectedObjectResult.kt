@@ -26,7 +26,7 @@ import android.graphics.Point
  * @property centerCoordinate A point on the image that best describes the object's location.
  */
 data class DetectedObjectResult(
-  val confidence: Float,
-  val label: String,
-  val centerCoordinate: Point
+    val confidence: Float,
+    val label: String,
+    val centerCoordinate: Point
 )

@@ -40,109 +40,108 @@ import okhttp3.RequestBody
  * .
  */
 class GoogleCloudVisionDetector(val activity: MainActivity, val apiKey: String) :
-  ObjectDetector(activity) {
-  companion object {
-    val TAG = "GoogleCloudVisionDetector"
-  }
-
-  val httpClient = OkHttpClient.Builder().build()
-
-  override suspend fun analyze(image: Image, imageRotation: Int): List<DetectedObjectResult> {
-    // `image` is in YUV
-    // (https://developers.google.com/ar/reference/java/com/google/ar/core/Frame#acquireCameraImage()),
-    val convertYuv = convertYuv(image)
-
-    // The model performs best on upright images, so rotate it.
-    val rotatedImage = ImageUtils.rotateBitmap(convertYuv, imageRotation)
-
-    // Create Google Cloud Vision request.
-    val body = createRequestBody(rotatedImage.toByteArray())
-    val req =
-      httpClient.newCall(
-        Request.Builder()
-          .url("https://vision.googleapis.com/v1/images:annotate?key=$apiKey")
-          .post(RequestBody.create(MediaType.parse("text/json"), body.toString()))
-          .build()
-      )
-
-    // Execute Google Cloud Vision request and parse response body.
-    req.execute().use { response ->
-      val responseBody = response.body()?.string()
-      if (responseBody == null) {
-        Log.e(TAG, "Failed to parse result body.")
-        return emptyList()
-      }
-      Log.i(TAG, "Received response body: $responseBody")
-      val jsonBody = JsonParser.parseString(responseBody).asJsonObject
-
-      // Process result and map to DetectedObjectResult.
-      // https://cloud.google.com/vision/docs/reference/rest/v1/AnnotateImageResponse
-      val responseObject = jsonBody.getAsJsonArray("responses").first().asJsonObject
-      // https://cloud.google.com/vision/docs/reference/rest/v1/AnnotateImageResponse#LocalizedObjectAnnotation
-      val localisedObjectAnnotationsList =
-        responseObject.getAsJsonArray("localizedObjectAnnotations") ?: return emptyList()
-      return localisedObjectAnnotationsList.map { it.asJsonObject }.map { annotation ->
-        // https://cloud.google.com/vision/docs/reference/rest/v1/projects.locations.products.referenceImages#BoundingPoly
-        val boundingPoly = annotation.get("boundingPoly").asJsonObject
-        val centerCoordinateNormalized =
-          VertexUtils.calculateCenterOfPoly(boundingPolyToCoordinateList(boundingPoly))
-        val centerCoordinateAbsolute =
-          centerCoordinateNormalized.toAbsoluteCoordinates(rotatedImage.width, rotatedImage.height)
-        val rotatedCoordinates =
-          centerCoordinateAbsolute.rotateCoordinates(
-            rotatedImage.width,
-            rotatedImage.height,
-            imageRotation
-          )
-        DetectedObjectResult(
-          confidence = annotation.get("score").asFloat,
-          label = annotation.get("name").asString,
-          centerCoordinate = rotatedCoordinates
-        )
-      }
+    ObjectDetector(activity) {
+    companion object {
+        val TAG = "GoogleCloudVisionDetector"
     }
-  }
 
-  /**
-   * Creates an
-   * [`images.annotate` request body](https://cloud.google.com/vision/docs/reference/rest/v1/images/annotate#request-body)
-   * @param image a [ByteArray] representation of the image to upload to Google Cloud Vision API.
-   */
-  fun createRequestBody(image: ByteArray): JsonObject {
+    val httpClient = OkHttpClient.Builder().build()
 
-    return JsonObject().apply {
-      add(
-        "requests",
-        JsonArray().apply {
-          add(
-            JsonObject().apply {
-              add(
-                "image",
-                JsonObject().apply {
-                  addProperty("content", Base64.encodeToString(image, Base64.DEFAULT))
-                }
-              )
-              add(
-                "features",
-                JsonArray().apply {
-                  add(JsonObject().apply { addProperty("type", "OBJECT_LOCALIZATION") })
-                }
-              )
+    override suspend fun analyze(image: Image, imageRotation: Int): List<DetectedObjectResult> {
+        // `image` is in YUV
+        // (https://developers.google.com/ar/reference/java/com/google/ar/core/Frame#acquireCameraImage()),
+        val convertYuv = convertYuv(image)
+
+        // The model performs best on upright images, so rotate it.
+        val rotatedImage = ImageUtils.rotateBitmap(convertYuv, imageRotation)
+
+        // Create Google Cloud Vision request.
+        val body = createRequestBody(rotatedImage.toByteArray())
+        val req =
+            httpClient.newCall(
+                Request.Builder()
+                    .url("https://vision.googleapis.com/v1/images:annotate?key=$apiKey")
+                    .post(RequestBody.create(MediaType.parse("text/json"), body.toString()))
+                    .build()
+            )
+
+        // Execute Google Cloud Vision request and parse response body.
+        req.execute().use { response ->
+            val responseBody = response.body()?.string()
+            if (responseBody == null) {
+                Log.e(TAG, "Failed to parse result body.")
+                return emptyList()
             }
-          )
-        }
-      )
-    }
-  }
+            Log.i(TAG, "Received response body: $responseBody")
+            val jsonBody = JsonParser.parseString(responseBody).asJsonObject
 
-  /**
-   * Transforms a [JsonObject] of
-   * [BoundingPoly](https://cloud.google.com/vision/docs/reference/rest/v1/projects.locations.products.referenceImages#BoundingPoly)
-   * to [List<PointF>].
-   */
-  fun boundingPolyToCoordinateList(boundingPoly: JsonObject): List<PointF> {
-    return boundingPoly.get("normalizedVertices").asJsonArray.map { it.asJsonObject }.mapNotNull {
-      if (it["x"] == null || it["y"] == null) null else PointF(it["x"].asFloat, it["y"].asFloat)
+            // Process result and map to DetectedObjectResult.
+            // https://cloud.google.com/vision/docs/reference/rest/v1/AnnotateImageResponse
+            val responseObject = jsonBody.getAsJsonArray("responses").first().asJsonObject
+            // https://cloud.google.com/vision/docs/reference/rest/v1/AnnotateImageResponse#LocalizedObjectAnnotation
+            val localisedObjectAnnotationsList =
+                responseObject.getAsJsonArray("localizedObjectAnnotations") ?: return emptyList()
+            return localisedObjectAnnotationsList.map { it.asJsonObject }.map { annotation ->
+                // https://cloud.google.com/vision/docs/reference/rest/v1/projects.locations.products.referenceImages#BoundingPoly
+                val boundingPoly = annotation.get("boundingPoly").asJsonObject
+                val centerCoordinateNormalized =
+                    VertexUtils.calculateCenterOfPoly(boundingPolyToCoordinateList(boundingPoly))
+                val centerCoordinateAbsolute =
+                    centerCoordinateNormalized.toAbsoluteCoordinates(rotatedImage.width, rotatedImage.height)
+                val rotatedCoordinates =
+                    centerCoordinateAbsolute.rotateCoordinates(
+                        rotatedImage.width,
+                        rotatedImage.height,
+                        imageRotation
+                    )
+                DetectedObjectResult(
+                    confidence = annotation.get("score").asFloat,
+                    label = annotation.get("name").asString,
+                    centerCoordinate = rotatedCoordinates
+                )
+            }
+        }
     }
-  }
+
+    /**
+     * Creates an
+     * [`images.annotate` request body](https://cloud.google.com/vision/docs/reference/rest/v1/images/annotate#request-body)
+     * @param image a [ByteArray] representation of the image to upload to Google Cloud Vision API.
+     */
+    fun createRequestBody(image: ByteArray): JsonObject {
+        return JsonObject().apply {
+            add(
+                "requests",
+                JsonArray().apply {
+                    add(
+                        JsonObject().apply {
+                            add(
+                                "image",
+                                JsonObject().apply {
+                                    addProperty("content", Base64.encodeToString(image, Base64.DEFAULT))
+                                }
+                            )
+                            add(
+                                "features",
+                                JsonArray().apply {
+                                    add(JsonObject().apply { addProperty("type", "OBJECT_LOCALIZATION") })
+                                }
+                            )
+                        }
+                    )
+                }
+            )
+        }
+    }
+
+    /**
+     * Transforms a [JsonObject] of
+     * [BoundingPoly](https://cloud.google.com/vision/docs/reference/rest/v1/projects.locations.products.referenceImages#BoundingPoly)
+     * to [List<PointF>].
+     */
+    fun boundingPolyToCoordinateList(boundingPoly: JsonObject): List<PointF> {
+        return boundingPoly.get("normalizedVertices").asJsonArray.map { it.asJsonObject }.mapNotNull {
+            if (it["x"] == null || it["y"] == null) null else PointF(it["x"].asFloat, it["y"].asFloat)
+        }
+    }
 }
